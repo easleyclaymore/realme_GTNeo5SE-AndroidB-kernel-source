@@ -1,0 +1,42 @@
+name: Build RMX3700 Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison build-essential flex libssl-dev libelf-dev \
+            zip unzip curl git python3 python3-pip cpio rsync
+
+      - name: Download AOSP Clang
+        run: |
+          mkdir -p $HOME/clang
+          cd $HOME/clang
+          curl -L -o clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
+          tar -xzf clang.tar.gz
+          echo "$HOME/clang/bin" >> $GITHUB_PATH
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$HOME/clang/bin:$PATH
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out RMX3700_A16_defconfig
+          make O=out -j$(nproc)
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image
+          path: out/arch/arm64/boot/Image*
