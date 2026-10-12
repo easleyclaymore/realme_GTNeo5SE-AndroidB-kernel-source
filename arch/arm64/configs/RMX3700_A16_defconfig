@@ -1,4 +1,4 @@
-name: Build RMX3700 Kernel
+name: Build RMX3700 Kernel with AnyKernel3
 
 on:
   workflow_dispatch:
@@ -50,12 +50,51 @@ jobs:
           echo "Searching for kernel Image..."
           find . -name "Image*" -type f 2>/dev/null | head -20
 
-      - name: Upload kernel image
+      - name: Setup AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git $HOME/AnyKernel3
+          # 移除 AnyKernel3 的 .git 目录，避免打包时出错
+          rm -rf $HOME/AnyKernel3/.git*
+
+      - name: Copy kernel image to AnyKernel3
+        run: |
+          # 查找编译出的 Image 或 Image.gz
+          IMAGE_PATH=$(find . -name "Image.gz" -o -name "Image" | head -1)
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "Error: Kernel Image not found!"
+            exit 1
+          fi
+          echo "Found kernel image at: $IMAGE_PATH"
+          # 复制 Image 到 AnyKernel3 目录
+          cp "$IMAGE_PATH" $HOME/AnyKernel3/
+          # 如果编译产物是 Image，则同时复制 dtb 文件（如果存在）
+          if [ -d "out/arch/arm64/boot/dts" ]; then
+            cp -r out/arch/arm64/boot/dts/* $HOME/AnyKernel3/ 2>/dev/null || true
+          fi
+
+      - name: Configure AnyKernel3 for RMX3700
+        run: |
+          cd $HOME/AnyKernel3
+          # 修改 anykernel.sh 以适配 RMX3700 (AB 分区设备)
+          sed -i 's/^block=.*/block=auto;/' anykernel.sh
+          sed -i 's/^is_slot_device=.*/is_slot_device=1;/' anykernel.sh
+          # 设置设备名称和内核名称（可选）
+          sed -i 's/^kernel.string=.*/kernel.string=RMX3700 Kernel/' anykernel.sh
+          sed -i 's/^device.name1=.*/device.name1=RMX3700/' anykernel.sh
+          echo "--- anykernel.sh 关键配置 ---"
+          grep -E "^(block|is_slot_device|kernel.string|device.name1)=" anykernel.sh
+
+      - name: Package AnyKernel3 ZIP
+        run: |
+          cd $HOME/AnyKernel3
+          ZIP_NAME="AnyKernel3-RMX3700-$(date +%Y%m%d).zip"
+          zip -r9 "$ZIP_NAME" * -x "*.git*" -x "*.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "Created: $ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+
+      - name: Upload AnyKernel3 ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: |
-            out/arch/arm64/boot/Image*
-            build/out/arch/arm64/boot/Image*
-            **/arch/arm64/boot/Image*
-          if-no-files-found: warn
+          name: AnyKernel3-RMX3700
+          path: ${{ env.HOME }}/AnyKernel3/${{ env.ZIP_NAME }}
