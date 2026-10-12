@@ -1,4 +1,4 @@
-name: Build RMX3700 Kernel
+name: Build RMX3700 Kernel with AnyKernel3
 
 on:
   workflow_dispatch:
@@ -14,14 +14,21 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y bc bison build-essential flex libssl-dev libelf-dev \
-            zip unzip curl git python3 python3-pip cpio rsync
+            libncurses-dev zip unzip curl git python3 python3-pip cpio rsync \
+            kmod dwarves
 
       - name: Download AOSP Clang
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
-          curl -L -o clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
-          tar -xzf clang.tar.gz
+          # 使用 git clone 方式拉取 Clang 工具链
+          git clone --depth=1 -b master \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            clang-src
+          # 复制指定版本到工作目录
+          cp -r clang-src/clang-r416183b/* $HOME/clang/
+          # 清理 git 目录，节省空间
+          rm -rf clang-src
           echo "$HOME/clang/bin" >> $GITHUB_PATH
 
       - name: Build kernel
@@ -32,11 +39,61 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out RMX3700_A16_defconfig
-          make O=out -j$(nproc)
 
-      - name: Upload Image
+          if [ -f build/build.sh ]; then
+            echo "Using build/build.sh"
+            export DEFCONFIG=RMX3700_A16_defconfig
+            ./build/build.sh
+          else
+            echo "Using make"
+            make O=out RMX3700_A16_defconfig
+            make O=out -j$(nproc)
+          fi
+
+      - name: Find kernel image
+        run: |
+          echo "Searching for kernel Image..."
+          find . -name "Image*" -type f 2>/dev/null | head -20
+
+      - name: Setup AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git $HOME/AnyKernel3
+          rm -rf $HOME/AnyKernel3/.git*
+
+      - name: Copy kernel image to AnyKernel3
+        run: |
+          IMAGE_PATH=$(find . -name "Image.gz" -o -name "Image" | head -1)
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "Error: Kernel Image not found!"
+            exit 1
+          fi
+          echo "Found kernel image at: $IMAGE_PATH"
+          cp "$IMAGE_PATH" $HOME/AnyKernel3/
+          if [ -d "out/arch/arm64/boot/dts" ]; then
+            cp -r out/arch/arm64/boot/dts/* $HOME/AnyKernel3/ 2>/dev/null || true
+          fi
+
+      - name: Configure AnyKernel3 for RMX3700
+        run: |
+          cd $HOME/AnyKernel3
+          sed -i 's/^block=.*/block=auto;/' anykernel.sh
+          sed -i 's/^is_slot_device=.*/is_slot_device=1;/' anykernel.sh
+          sed -i 's/^kernel.string=.*/kernel.string=RMX3700 Kernel/' anykernel.sh
+          sed -i 's/^device.name1=.*/device.name1=RMX3700/' anykernel.sh
+          echo "--- anykernel.sh 关键配置 ---"
+          grep -E "^(block|is_slot_device|kernel.string|device.name1)=" anykernel.sh
+
+      - name: Package AnyKernel3 ZIP
+        run: |
+          cd $HOME/AnyKernel3
+          ZIP_NAME="AnyKernel3-RMX3700-$(date +%Y%m%d).zip"
+          zip -r9 "$ZIP_NAME" * -x "*.git*" -x "*.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "Created: $ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+
+      - name: Upload AnyKernel3 ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: out/arch/arm64/boot/Image*
+          name: AnyKernel3-RMX3700
+          path: ${{ env.HOME }}/AnyKernel3/${{ env.ZIP_NAME }}
