@@ -97,8 +97,20 @@ jobs:
               exit 1
             fi
             echo "补桩: $miss"
-            mkdir -p "$(dirname "$miss")"
-            : > "$miss"
+            d="$(dirname "$miss")"
+            # 有些子模块占位会落成同名文件，先清掉
+            [ -e "$d" ] && [ ! -d "$d" ] && rm -f "$d" || true
+            [ -e "$miss" ] && [ ! -d "$miss" ] && rm -f "$miss" || true
+            mkdir -p "$d" 2>/dev/null || true
+            : > "$miss" 2>/dev/null || true
+            if [ ! -f "$miss" ]; then
+              # 实在建不了，就把引用它的 source 行注释掉
+              echo "  建桩失败，改注释 source 引用"
+              grep -rl "source \"$miss\"" --include='Kconfig*' . 2>/dev/null | while IFS= read -r kf; do
+                sed -i "s|^\\([[:space:]]*\\)source \"$miss\"|\\1# source \"$miss\" (missing)|" "$kf"
+                echo "  已注释 $kf"
+              done
+            fi
           done
           echo "共补桩 $((attempt-1)) 个"
 
