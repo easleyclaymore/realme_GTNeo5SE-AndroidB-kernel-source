@@ -48,8 +48,7 @@ jobs:
           ok=0
           for url in \
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r416183b.tar.gz" \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz" \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-5.10-release/clang-r416183b.tar.gz"; do
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz"; do
             echo "::group::尝试 $url"
             if curl -fsSL --retry 2 --connect-timeout 20 -o /tmp/clang.tar.gz "$url"; then
               echo "下载成功"; ok=1; echo "::endgroup::"; break
@@ -59,7 +58,7 @@ jobs:
           if [ "$ok" = "1" ]; then
             tar -xzf /tmp/clang.tar.gz -C "$HOME/clang"
           else
-            echo "::warning::googlesource 全部失败，改用 GitHub 镜像"
+            echo "::warning::googlesource 失败，改用 GitHub 镜像"
             git clone --depth=1 \
               https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b \
               /tmp/clangrepo
@@ -71,49 +70,39 @@ jobs:
           echo "$HOME/clang/bin" >> "$GITHUB_PATH"
           df -h /
 
-      - name: 补桩（realme 未公开的子模块目录）
+      - name: 补桩 + 跑通 gki_defconfig
         run: |
           set -e
-          # init/Kconfig 之类里 source "kernel/oplus_cpu/sched/Kconfig" 是活的
-          # （外面那圈 #ifdef 在 Kconfig 里只是注释），但 realme 把这些目录做成了
-          # 子模块占位、没公开源码，直接让 defconfig 报 can't open file。
-          echo "== 已知子模块占位 =="
+          # realme 公开的树里 kernel/oplus_cpu、kernel/sched/walt/tuning 只是子模块占位
+          # （.gitmodules 都没给），但 init/Kconfig 里 source 它们是活的（外面那圈 #ifdef
+          # 在 Kconfig 里只是注释）→ defconfig 直接报 can't open file。
+          # 做法：反复跑 defconfig，报哪个缺就补个空桩，直到通过。
           for p in kernel/oplus_cpu kernel/sched/walt/tuning; do
             git rm -r -f -q --cached "$p" 2>/dev/null || true
             rm -rf "$p"
           done
 
-          echo "== 全树扫描缺失的 source 目标 =="
-          python3 - <<'PYEOF'
-          import os, re
-          missing = set()
-          for dp, dns, fns in os.walk('.'):
-              dns[:] = [d for d in dns if d not in ('.git', 'out')]
-              for f in fns:
-                  if not f.startswith('Kconfig'):
-                      continue
-                  p = os.path.join(dp, f)
-                  try:
-                      lines = open(p, encoding='utf-8', errors='ignore')
-                  except OSError:
-                      continue
-                  for line in lines:
-                      m = re.match(r'\s*(?:source|orsource)\s+"([^"]+)"', line)
-                      if not m:
-                          continue
-                      # Kconfig 的 source 路径一律相对源码根目录（不是相对所在文件）
-                      t = m.group(1).lstrip('/')
-                      if not os.path.exists(t):
-                          missing.add(t)
-          for t in sorted(missing):
-              os.makedirs(os.path.dirname(t) or '.', exist_ok=True)
-              with open(t, 'w') as fh:
-                  fh.write('# stub: realme 未公开该目录源码，置空以让 Kconfig 解析\n')
-              print('补桩', t)
-          print('共补', len(missing), '个')
-          PYEOF
+          mkdir -p out
+          attempt=0
+          while : ; do
+            attempt=$((attempt+1))
+            if make O=out ARCH=arm64 LLVM=1 gki_defconfig > /tmp/defconfig.log 2>&1; then
+              echo "✅ defconfig 通过（第 $attempt 次尝试）"
+              break
+            fi
+            miss=$(sed -n 's/.*can.t open file "\([^"]*\)".*/\1/p' /tmp/defconfig.log | head -1)
+            if [ -z "$miss" ] || [ "$attempt" -ge 40 ]; then
+              echo "❌ 无法继续补桩，最后一次日志："
+              tail -40 /tmp/defconfig.log
+              exit 1
+            fi
+            echo "补桩: $miss"
+            mkdir -p "$(dirname "$miss")"
+            : > "$miss"
+          done
+          echo "共补桩 $((attempt-1)) 个"
 
-      - name: 应用 kABI 补丁
+      - name: 应用 kABI 补丁并提交
         run: |
           set -e
           B=https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12
@@ -121,57 +110,53 @@ jobs:
           curl -fsSL -o /tmp/002.patch "$B/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch"
           for p in /tmp/001.patch /tmp/002.patch; do
             echo "::group::应用 $p"
-            head -12 "$p"
+            head -10 "$p"
             if git apply --verbose --recount -p1 "$p"; then
               echo "git apply 成功"
             else
-              echo "::warning::git apply 失败，回退到 patch --fuzz=3"
+              echo "::warning::git apply 失败，回退 patch --fuzz=3"
               patch -p1 --fuzz=3 < "$p"
             fi
             echo "::endgroup::"
           done
-          # 打完补丁必须提交，否则工作树是 dirty 的，setlocalversion 会在版本串尾部
-          # 追加 "+"，vermagic 就和 ROM 模块对不上、模块全部拒绝加载
+          # 补丁和桩都要提交，否则工作树是脏的，setlocalversion 会在版本串尾部加 "+"
           git add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -q -m "ci: apply droidspaces kABI patches" || true
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "ci: droidspaces kabi patches + stubs" || true
           git status --short | head -5
 
-      - name: 生成内核配置
+      - name: 合并 fragment 并对齐版本串
         run: |
           set -e
           case "${{ inputs.variant }}" in
             gki)         VCONF=arch/arm64/configs/vendor/parrot_GKI.config ;;
             consolidate) VCONF=arch/arm64/configs/vendor/parrot_consolidate.config ;;
+            *) echo "未知 variant"; exit 1 ;;
           esac
           echo "variant=${{ inputs.variant }} → $VCONF"
-          mkdir -p out
-          make O=out ARCH=arm64 LLVM=1 gki_defconfig
           scripts/kconfig/merge_config.sh -m -O out \
             "$VCONF" \
             arch/arm64/configs/droidspaces.fragment
 
-          # 版本串必须与目标 ROM 内核逐字一致，否则 vendor 模块 vermagic 校验不过
           sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"|" out/.config
-          scripts/config --file out/.config -d LOCALVERSION_AUTO || true
-
+          scripts/config --file out/.config -d LOCALVERSION_AUTO 2>/dev/null || true
           make O=out ARCH=arm64 LLVM=1 olddefconfig
 
           echo "=== 关键项 ==="
-          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|LOCALVERSION|MODVERSIONS|LOCALVERSION_AUTO)=" out/.config || true
+          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION)=" out/.config || true
           grep -E "^# CONFIG_(LOCALVERSION_AUTO|CFS_BANDWIDTH|CGROUP_PIDS) " out/.config || true
           cp out/.config /tmp/kernel.config
 
       - name: 编译 Image
         run: |
           set -o pipefail
-          make O=out ARCH=arm64 LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -80
+          make O=out ARCH=arm64 LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
 
       - name: 检查产物
         run: |
           set -e
           ls -lh out/arch/arm64/boot/
           file out/arch/arm64/boot/Image
-          VM=$(strings out/arch/arm64/boot/Image | grep -m1 -E "^5\.10\.[0-9]+-.*SMP")
+          VM=$(strings out/arch/arm64/boot/Image | grep -m1 -E "^5\.10\.[0-9]+-.*SMP" || true)
           echo "vermagic: $VM"
           strings out/arch/arm64/boot/Image | grep -m1 -E "^Linux version" || true
           EXPECT="5.10.236${{ inputs.localversion }}"
@@ -198,6 +183,7 @@ jobs:
           name: build-log-failed
           path: |
             /tmp/build.log
+            /tmp/defconfig.log
             /tmp/kernel.config
           if-no-files-found: ignore
           retention-days: 7
