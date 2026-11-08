@@ -102,8 +102,9 @@ jobs:
             consolidate) VCONF=arch/arm64/configs/vendor/parrot_consolidate.config ;;
           esac
           echo "variant=${{ inputs.variant }} → $VCONF"
+          mkdir -p out
+          make O=out ARCH=arm64 LLVM=1 gki_defconfig
           scripts/kconfig/merge_config.sh -m -O out \
-            arch/arm64/configs/gki_defconfig \
             "$VCONF" \
             arch/arm64/configs/droidspaces.fragment
 
