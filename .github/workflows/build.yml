@@ -101,8 +101,8 @@ jobs:
                       m = re.match(r'\s*(?:source|orsource)\s+"([^"]+)"', line)
                       if not m:
                           continue
-                      t = m.group(1)
-                      t = t[1:] if t.startswith('/') else os.path.normpath(os.path.join(dp, t))
+                      # Kconfig 的 source 路径一律相对源码根目录（不是相对所在文件）
+                      t = m.group(1).lstrip('/')
                       if not os.path.exists(t):
                           missing.add(t)
           for t in sorted(missing):
