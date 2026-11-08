@@ -1,0 +1,31 @@
+# Droidspaces 所需的内核开关（GKI 5.10 / RMX3700）
+#
+# 背景：这些开关在原厂 gki_defconfig 里是关闭的，而它们都是 bool，
+# 无法模块化、没有运行时开关，必须重编内核。
+#
+# 注意：改动 struct task_struct 布局会破坏 GKI kABI，vendor 模块会因
+# CRC 不符拒绝加载 → bootloop。因此必须先打 kABI 补丁（工作流里自动打）：
+#   001.GKI-below-6.12-fix_sysvipc_kabi_*.patch        （SYSVIPC 走 ABI padding 槽位）
+#   002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch
+
+# === 必需 ===
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_SYSVIPC_SYSCTL=y
+CONFIG_IPC_NS=y
+CONFIG_PID_NS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
+# === 可选（Docker / 更多容器能力）===
+CONFIG_USER_NS=y
+
+# === 容器网络：NAT 需要按目标地址匹配 ===
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+CONFIG_MACVLAN=m
+CONFIG_IPVLAN=m
+
+# === 千万不要开（Droidspaces 官方明确警告）===
+# CONFIG_CFS_BANDWIDTH  —— 破坏 kABI 且无补丁，开了就得连所有模块一起重编
+# CONFIG_CGROUP_PIDS    —— 同上
+# 代价：容器里 --cpus / --pids-limit 用不了，容器本体正常。
