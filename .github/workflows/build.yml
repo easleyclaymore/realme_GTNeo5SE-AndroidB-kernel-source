@@ -71,6 +71,21 @@ jobs:
           echo "$HOME/clang/bin" >> "$GITHUB_PATH"
           df -h /
 
+      - name: 补桩（realme 未公开 kernel/oplus_cpu 子模块）
+        run: |
+          set -e
+          # init/Kconfig 无条件 source "kernel/oplus_cpu/sched/Kconfig"，
+          # 但该目录在公开仓库里只是个子模块占位（.gitmodules 也没有），源码未发布。
+          # Kconfig 里那段是 #ifdef 注释包着的，source 实际生效，缺文件直接让 defconfig 失败。
+          # 补空 Kconfig 即可：CONFIG_OPLUS_* 全为关，kernel/Makefile 里对应子目录也不会编译。
+          git rm -q --cached kernel/oplus_cpu 2>/dev/null || true
+          rm -rf kernel/oplus_cpu
+          mkdir -p kernel/oplus_cpu/sched
+          cat > kernel/oplus_cpu/sched/Kconfig <<'KEOF'
+          # stub —— realme 未公开该子模块源码，置空以让上游 Kconfig 能解析
+          KEOF
+          ls -l kernel/oplus_cpu/sched/
+
       - name: 应用 kABI 补丁
         run: |
           set -e
