@@ -4,17 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: '配置变体：gki（parrot_GKI.config）或 consolidate（parrot_consolidate.config）'
+        description: '配置变体：gki 或 consolidate'
         required: true
-        default: gki
-        type: choice
-        options: [gki, consolidate]
+        default: 'gki'
       kabi_patch:
-        description: 'SYSVIPC kABI 补丁槽位（bootloop 就换下一个）'
+        description: 'SYSVIPC kABI 补丁槽位：6_7_8 / 3_4_5 / 1_2_3'
         required: true
         default: '6_7_8'
-        type: choice
-        options: [6_7_8, 3_4_5, 1_2_3]
       localversion:
         description: 'CONFIG_LOCALVERSION，必须与目标 ROM 内核 release 一致'
         required: true
