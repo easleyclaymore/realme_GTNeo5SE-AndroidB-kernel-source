@@ -71,20 +71,47 @@ jobs:
           echo "$HOME/clang/bin" >> "$GITHUB_PATH"
           df -h /
 
-      - name: 补桩（realme 未公开 kernel/oplus_cpu 子模块）
+      - name: 补桩（realme 未公开的子模块目录）
         run: |
           set -e
-          # init/Kconfig 无条件 source "kernel/oplus_cpu/sched/Kconfig"，
-          # 但该目录在公开仓库里只是个子模块占位（.gitmodules 也没有），源码未发布。
-          # Kconfig 里那段是 #ifdef 注释包着的，source 实际生效，缺文件直接让 defconfig 失败。
-          # 补空 Kconfig 即可：CONFIG_OPLUS_* 全为关，kernel/Makefile 里对应子目录也不会编译。
-          git rm -q --cached kernel/oplus_cpu 2>/dev/null || true
-          rm -rf kernel/oplus_cpu
-          mkdir -p kernel/oplus_cpu/sched
-          cat > kernel/oplus_cpu/sched/Kconfig <<'KEOF'
-          # stub —— realme 未公开该子模块源码，置空以让上游 Kconfig 能解析
-          KEOF
-          ls -l kernel/oplus_cpu/sched/
+          # init/Kconfig 之类里 source "kernel/oplus_cpu/sched/Kconfig" 是活的
+          # （外面那圈 #ifdef 在 Kconfig 里只是注释），但 realme 把这些目录做成了
+          # 子模块占位、没公开源码，直接让 defconfig 报 can't open file。
+          echo "== 已知子模块占位 =="
+          for p in kernel/oplus_cpu kernel/sched/walt/tuning; do
+            git rm -r -f -q --cached "$p" 2>/dev/null || true
+            rm -rf "$p"
+          done
+
+          echo "== 全树扫描缺失的 source 目标 =="
+          python3 - <<'PYEOF'
+          import os, re
+          missing = set()
+          for dp, dns, fns in os.walk('.'):
+              dns[:] = [d for d in dns if d not in ('.git', 'out')]
+              for f in fns:
+                  if not f.startswith('Kconfig'):
+                      continue
+                  p = os.path.join(dp, f)
+                  try:
+                      lines = open(p, encoding='utf-8', errors='ignore')
+                  except OSError:
+                      continue
+                  for line in lines:
+                      m = re.match(r'\s*(?:source|orsource)\s+"([^"]+)"', line)
+                      if not m:
+                          continue
+                      t = m.group(1)
+                      t = t[1:] if t.startswith('/') else os.path.normpath(os.path.join(dp, t))
+                      if not os.path.exists(t):
+                          missing.add(t)
+          for t in sorted(missing):
+              os.makedirs(os.path.dirname(t) or '.', exist_ok=True)
+              with open(t, 'w') as fh:
+                  fh.write('# stub: realme 未公开该目录源码，置空以让 Kconfig 解析\n')
+              print('补桩', t)
+          print('共补', len(missing), '个')
+          PYEOF
 
       - name: 应用 kABI 补丁
         run: |
