@@ -92,7 +92,11 @@ jobs:
             fi
             echo "::endgroup::"
           done
-          git diff --stat
+          # 打完补丁必须提交，否则工作树是 dirty 的，setlocalversion 会在版本串尾部
+          # 追加 "+"，vermagic 就和 ROM 模块对不上、模块全部拒绝加载
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "ci: apply droidspaces kABI patches" || true
+          git status --short | head -5
 
       - name: 生成内核配置
         run: |
@@ -128,10 +132,14 @@ jobs:
           set -e
           ls -lh out/arch/arm64/boot/
           file out/arch/arm64/boot/Image
-          echo "=== vermagic（必须与目标 ROM 一致）==="
-          strings out/arch/arm64/boot/Image | grep -m2 -E "^5\.10\.[0-9]+-.*SMP" || true
-          echo "=== 内核 banner ==="
+          VM=$(strings out/arch/arm64/boot/Image | grep -m1 -E "^5\.10\.[0-9]+-.*SMP")
+          echo "vermagic: $VM"
           strings out/arch/arm64/boot/Image | grep -m1 -E "^Linux version" || true
+          EXPECT="5.10.236${{ inputs.localversion }}"
+          case "$VM" in
+            "$EXPECT"*) echo "✅ vermagic 与目标 ROM 对齐" ;;
+            *) echo "❌ vermagic 不符，期望前缀 $EXPECT"; exit 1 ;;
+          esac
 
       - name: 上传内核
         uses: actions/upload-artifact@v4
