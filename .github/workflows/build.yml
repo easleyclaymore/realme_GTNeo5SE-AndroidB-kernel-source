@@ -114,6 +114,32 @@ jobs:
           done
           echo "共补桩 $((attempt-1)) 个"
 
+      - name: 补齐厂商私有子树缺件
+        run: |
+          set -e
+          # realme 公开树把 OPLUS 私有驱动做成指向 vendor/oplus/... 的 symlink，
+          # 仓库不含 vendor/ → checkout 后全部悬空；drivers/soc/Makefile 里还有
+          # 无条件 obj-y += oplus/storage/ 等，make 会去找并不存在的 Makefile。
+          echo "=== 注释 drivers/soc/Makefile 中的 oplus 私有子树引用 ==="
+          sed -i -E '/^[[:space:]]*(obj|subdir)-[^=]*[+]=.*oplus\// s|^|# vendor stub: |' drivers/soc/Makefile
+          grep -n 'oplus/' drivers/soc/Makefile | head -20 || true
+          echo "=== 通用兜底：被引用但缺 Makefile 的子目录建空桩 ==="
+          find . -path ./out -prune -o -path ./.git -prune -o -name Makefile -type f -print > /tmp/mklist
+          while IFS= read -r mf; do
+            d=$(dirname "$mf")
+            grep -E '^[[:space:]]*(obj|subdir)-[^=]*[+]=' "$mf" 2>/dev/null | sed 's/#.*//' | tr ' \t' '\n\n' | grep '/$' | grep -v '\$' | sort -u | while IFS= read -r sub; do
+              sub=${sub%/}
+              sd="$d/$sub"
+              [ -f "$sd/Makefile" ] && continue
+              [ -f "$sd/Kbuild" ] && continue
+              [ -L "$sd" ] && rm -f "$sd"
+              mkdir -p "$sd" 2>/dev/null || continue
+              printf '# stub: source missing in public tree\n' > "$sd/Makefile"
+              echo "  stub $sd"
+            done
+          done < /tmp/mklist
+          echo "=== 补桩完成 ==="
+
       - name: 应用 kABI 补丁并提交
         run: |
           set -e
