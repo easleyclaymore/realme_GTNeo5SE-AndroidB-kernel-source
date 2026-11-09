@@ -132,6 +132,9 @@ jobs:
             echo "::endgroup::"
           done
           # 补丁和桩都要提交，否则工作树是脏的，setlocalversion 会在版本串尾部加 "+"
+          # realme 开源树笔误：shrink_lruvec() 声明 proportional_reclaim 却使用 scan_adjusted
+          sed -i 's/bool proportional_reclaim;/bool scan_adjusted;/' mm/vmscan.c
+          grep -n 'bool scan_adjusted' mm/vmscan.c
           git add -A
           git -c user.name=ci -c user.email=ci@localhost commit -q -m "ci: droidspaces kabi patches + stubs" || true
           git status --short | head -5
