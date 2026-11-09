@@ -86,7 +86,7 @@ jobs:
           attempt=0
           while : ; do
             attempt=$((attempt+1))
-            if make O=out ARCH=arm64 LLVM=1 gki_defconfig > /tmp/defconfig.log 2>&1; then
+            if make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 gki_defconfig > /tmp/defconfig.log 2>&1; then
               echo "✅ defconfig 通过（第 $attempt 次尝试）"
               break
             fi
@@ -151,7 +151,7 @@ jobs:
 
           sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"|" out/.config
           scripts/config --file out/.config -d LOCALVERSION_AUTO 2>/dev/null || true
-          make O=out ARCH=arm64 LLVM=1 olddefconfig
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig
 
           echo "=== 关键项 ==="
           grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION)=" out/.config || true
@@ -161,7 +161,7 @@ jobs:
       - name: 编译 Image
         run: |
           set -o pipefail
-          make O=out ARCH=arm64 LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
 
       - name: 检查产物
         run: |
