@@ -215,6 +215,11 @@ jobs:
       - name: 编译 Image
         run: |
           set -o pipefail
+          # 5.10 的 scripts/setlocalversion：CONFIG_LOCALVERSION_AUTO=N 时，只要
+          # 仓库不在 annotated tag 上就会追加 "+"，CI checkout 必然命中 →
+          # vermagic 变成 "...g74d132f4467a+"，与 ROM 原版不一致会让 vendor .ko 拒载。
+          # 显式把 LOCALVERSION 设为空即可抑制（空值同样算 "set"），且不影响版本串。
+          export LOCALVERSION=
           make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
 
       - name: 检查产物
@@ -226,6 +231,9 @@ jobs:
           echo "vermagic: $VM"
           strings out/arch/arm64/boot/Image | grep -m1 -E "^Linux version" || true
           EXPECT="5.10.236${{ inputs.localversion }}"
+          if printf '%s' "$VM" | grep -q '+'; then
+            echo "❌ vermagic 含 +，与目标 ROM 不一致（检查产物必须干净）"; exit 1
+          fi
           case "$VM" in
             "$EXPECT"*) echo "✅ vermagic 与目标 ROM 对齐" ;;
             *) echo "❌ vermagic 不符，期望前缀 $EXPECT"; exit 1 ;;
