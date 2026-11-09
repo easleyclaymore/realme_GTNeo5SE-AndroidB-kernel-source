@@ -140,6 +140,18 @@ jobs:
           done < /tmp/mklist
           echo "=== 补桩完成 ==="
 
+      - name: 修正开源树源码缺陷
+        run: |
+          set -e
+          # 5.10 的 kvzalloc/kvfree 声明在 include/linux/mm.h，而 realme 改过的
+          # drivers/thermal/thermal_sysfs.c 只 include 了 linux/slab.h →
+          # implicit declaration 被 -Werror 判为致命错误。
+          f=drivers/thermal/thermal_sysfs.c
+          if ! grep -q '^#include <linux/mm.h>' "$f"; then
+            sed -i 's|^#include <linux/slab.h>$|#include <linux/slab.h>\n#include <linux/mm.h>|' "$f"
+          fi
+          grep -n 'linux/mm.h\|linux/slab.h' "$f"
+
       - name: 应用 kABI 补丁并提交
         run: |
           set -e
@@ -197,7 +209,7 @@ jobs:
       - name: 编译 Image
         run: |
           set -o pipefail
-          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
+          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
 
       - name: 检查产物
         run: |
