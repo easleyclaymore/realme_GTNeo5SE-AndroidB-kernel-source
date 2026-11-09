@@ -151,6 +151,12 @@ jobs:
             sed -i 's|^#include <linux/slab.h>$|#include <linux/slab.h>\n#include <linux/mm.h>|' "$f"
           fi
           grep -n 'linux/mm.h\|linux/slab.h' "$f"
+          # realme 从较新内核 backport 了 mmget_still_valid() 检查，但本 5.10 树
+          # 既无该函数也无 MMF_UNSTABLE；上游 android12-5.10 的 binder_alloc.c
+          # 在 mmap_write_lock(mm) 后直接取 vma，没有这段检查。恢复上游逻辑：
+          # 删掉这 5 行；err_no_vma / free_range 标签在别处仍有 goto 引用。
+          sed -i '/if (!mmget_still_valid(mm)) {/,+4d' drivers/android/binder_alloc.c
+          grep -n 'mmget_still_valid' drivers/android/binder_alloc.c || echo "  binder: 已恢复上游 5.10 逻辑"
 
       - name: 应用 kABI 补丁并提交
         run: |
