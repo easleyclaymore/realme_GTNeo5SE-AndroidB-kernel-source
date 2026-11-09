@@ -145,16 +145,23 @@ jobs:
             *) echo "未知 variant"; exit 1 ;;
           esac
           echo "variant=${{ inputs.variant }} → $VCONF"
+          cp out/.config /tmp/base.config
+          cat > /tmp/droidspaces-extra.fragment <<'FRAG'
+          CONFIG_ANDROID_KABI_RESERVE=y
+          CONFIG_POSIX_MQUEUE=y
+          FRAG
           scripts/kconfig/merge_config.sh -m -O out \
+            /tmp/base.config \
             "$VCONF" \
-            arch/arm64/configs/droidspaces.fragment
+            arch/arm64/configs/droidspaces.fragment \
+            /tmp/droidspaces-extra.fragment
 
           sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"|" out/.config
           scripts/config --file out/.config -d LOCALVERSION_AUTO 2>/dev/null || true
           make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig
 
           echo "=== 关键项 ==="
-          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION)=" out/.config || true
+          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION|ANDROID_KABI_RESERVE|POSIX_MQUEUE|MODULES|NET)=" out/.config || true
           grep -E "^# CONFIG_(LOCALVERSION_AUTO|CFS_BANDWIDTH|CGROUP_PIDS) " out/.config || true
           cp out/.config /tmp/kernel.config
 
