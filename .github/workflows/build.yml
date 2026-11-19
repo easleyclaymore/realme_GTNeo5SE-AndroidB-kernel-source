@@ -87,36 +87,37 @@ jobs:
           # → vendor 模块符号/CRC 对不上 → 早期崩溃。真源码在 vendor-source 仓库。
           git clone --depth 1 https://github.com/realme-kernel-opensource/realme_GTNeo5SE-AndroidB-vendor-source /tmp/vsrc 2>/dev/null ||           git clone --depth 1 https://github.com/realme-kernel-opensource/realme_GTNeo5SE-AndroidB-vendor-source /tmp/vsrc
           MAP='
-kernel/oplus_cpu/cpufreq_bouncing|vendor/oplus/kernel/cpu/cpufreq_bouncing
-kernel/oplus_cpu/cpufreq_effiency|vendor/oplus/kernel/cpu/cpufreq_effiency
-kernel/oplus_cpu/cpufreq_health|vendor/oplus/kernel/cpu/cpufreq_health
-kernel/oplus_cpu/oplus_omrg|vendor/oplus/kernel/cpu/oplus_omrg
-kernel/oplus_cpu/oplus_overload|vendor/oplus/kernel/cpu/oplus_overload
-kernel/oplus_cpu/sched|vendor/oplus/kernel/cpu/sched
-kernel/oplus_cpu/uad|vendor/oplus/kernel/cpu/uad
-mm/oplus_mm|vendor/oplus/kernel/mm
-drivers/input/touchscreen/oplus_touchscreen_v2|vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
-drivers/input/touchscreen/synaptics_hbp|vendor/oplus/kernel/touchpanel/synaptics_hbp
-drivers/base/kernelFwUpdate|vendor/oplus/kernel/touchpanel/kernelFwUpdate
-drivers/soc/oplus/boot|vendor/oplus/kernel/boot
-drivers/soc/oplus/device_info|vendor/oplus/kernel/device_info
-drivers/soc/oplus/dfr|vendor/oplus/kernel/dfr
-drivers/soc/oplus/dft|vendor/oplus/kernel/dft
-drivers/soc/oplus/mdmfeature|vendor/oplus/hardware/radio/kernel/mdmfeature
-drivers/soc/oplus/mdmrst|vendor/oplus/hardware/radio/mdmrst
-drivers/soc/oplus/multimedia|vendor/oplus/kernel/multimedia
-drivers/soc/oplus/oplus_consumer_ir|vendor/oplus/sensor/kernel/oplus_consumer_ir
-drivers/soc/oplus/storage|vendor/oplus/kernel/storage
-drivers/soc/oplus/power/midas|vendor/oplus/kernel/power/midas
-drivers/soc/oplus/power/subsys_sleep_monitor|vendor/oplus/kernel/power/subsys_sleep_monitor
-drivers/soc/oplus/power/cpufreq_effiency|vendor/oplus/kernel/power/cpufreq_effiency
-drivers/soc/oplus/power/cpufreq_health|vendor/oplus/kernel/power/cpufreq_health
-drivers/soc/oplus/sensor|vendor/oplus/sensor/kernel
-drivers/misc/oplus_procs_load|vendor/oplus/kernel/power/procs_load
-drivers/input/uff_fp_drivers|vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver
-drivers/input/oplus_fp_driver|vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/mtk
-'
+          kernel/oplus_cpu/cpufreq_bouncing|vendor/oplus/kernel/cpu/cpufreq_bouncing
+          kernel/oplus_cpu/cpufreq_effiency|vendor/oplus/kernel/cpu/cpufreq_effiency
+          kernel/oplus_cpu/cpufreq_health|vendor/oplus/kernel/cpu/cpufreq_health
+          kernel/oplus_cpu/oplus_omrg|vendor/oplus/kernel/cpu/oplus_omrg
+          kernel/oplus_cpu/oplus_overload|vendor/oplus/kernel/cpu/oplus_overload
+          kernel/oplus_cpu/sched|vendor/oplus/kernel/cpu/sched
+          kernel/oplus_cpu/uad|vendor/oplus/kernel/cpu/uad
+          mm/oplus_mm|vendor/oplus/kernel/mm
+          drivers/input/touchscreen/oplus_touchscreen_v2|vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
+          drivers/input/touchscreen/synaptics_hbp|vendor/oplus/kernel/touchpanel/synaptics_hbp
+          drivers/base/kernelFwUpdate|vendor/oplus/kernel/touchpanel/kernelFwUpdate
+          drivers/soc/oplus/boot|vendor/oplus/kernel/boot
+          drivers/soc/oplus/device_info|vendor/oplus/kernel/device_info
+          drivers/soc/oplus/dfr|vendor/oplus/kernel/dfr
+          drivers/soc/oplus/dft|vendor/oplus/kernel/dft
+          drivers/soc/oplus/mdmfeature|vendor/oplus/hardware/radio/kernel/mdmfeature
+          drivers/soc/oplus/mdmrst|vendor/oplus/hardware/radio/mdmrst
+          drivers/soc/oplus/multimedia|vendor/oplus/kernel/multimedia
+          drivers/soc/oplus/oplus_consumer_ir|vendor/oplus/sensor/kernel/oplus_consumer_ir
+          drivers/soc/oplus/storage|vendor/oplus/kernel/storage
+          drivers/soc/oplus/power/midas|vendor/oplus/kernel/power/midas
+          drivers/soc/oplus/power/subsys_sleep_monitor|vendor/oplus/kernel/power/subsys_sleep_monitor
+          drivers/soc/oplus/power/cpufreq_effiency|vendor/oplus/kernel/power/cpufreq_effiency
+          drivers/soc/oplus/power/cpufreq_health|vendor/oplus/kernel/power/cpufreq_health
+          drivers/soc/oplus/sensor|vendor/oplus/sensor/kernel
+          drivers/misc/oplus_procs_load|vendor/oplus/kernel/power/procs_load
+          drivers/input/uff_fp_drivers|vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver
+          drivers/input/oplus_fp_driver|vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/mtk
+          '
           echo "$MAP" | while IFS='|' read -r kdst vsrcp; do
+            kdst=$(echo "$kdst" | xargs); vsrcp=$(echo "$vsrcp" | xargs)
             [ -n "$kdst" ] || continue
             if [ -d "/tmp/vsrc/$vsrcp" ]; then
               rm -rf "$kdst"
