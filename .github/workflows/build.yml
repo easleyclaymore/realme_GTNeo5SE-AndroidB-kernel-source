@@ -147,6 +147,17 @@ jobs:
               echo "  ⚠ vendor-source 无 $vsrcp（留待补桩）"
             fi
           done
+          # === v4: 4 个子树缺顶层 Kconfig/Makefile（胶水在 OPPO 内部构建系统）——聚合生成 ===
+          gen_glue() {
+            local kdst="$1"; shift
+            { echo "# v4 聚合生成：vendor-source 缺顶层 Kconfig"; for s in $*; do [ -f "$kdst/$s/Kconfig" ] && echo "source \"$s/Kconfig\""; done; } > "$kdst/Kconfig"
+            { echo "# v4 聚合生成（obj-y 放行，内部 Makefile 自行按 CONFIG 门控）"; for s in $*; do [ -f "$kdst/$s/Makefile" ] && echo "obj-y += $s/"; done; } > "$kdst/Makefile"
+            echo "  胶水生成 $kdst/{Kconfig,Makefile}"
+          }
+          gen_glue drivers/soc/oplus/device_info "device_info tri_state_key"
+          gen_glue drivers/soc/oplus/mdmrst "common"
+          gen_glue drivers/soc/oplus/multimedia "feedback"
+          gen_glue drivers/soc/oplus/sensor "oplus_consumer_ir oplus_sensor_devinfo oplus_virtual_sensor pseudo-sensor qcom" 
 
           mkdir -p out
           # 2026-11-19 改用设备真实配置（RisingOS 9 运行中 /proc/config.gz 提取）：
@@ -262,6 +273,13 @@ jobs:
           cat > /tmp/droidspaces-extra.fragment <<'FRAG'
           CONFIG_ANDROID_KABI_RESERVE=y
           CONFIG_POSIX_MQUEUE=y
+          # v4: LTO_CLANG_FULL + CFI —— stock 内核即此配置；CFI 是 ABI 级特性，
+          # vendor 模块（带 CFI 编译）载入无 CFI 内核必挂。开启后与 stock ABI 对齐。
+          CONFIG_LTO=y
+          CONFIG_HAS_LTO_CLANG=y
+          CONFIG_LTO_CLANG_FULL=y
+          CONFIG_CFI_CLANG=y
+          CONFIG_CFI_CLANG_SHADOW=y
           # 关 SCM 门禁与符号裁剪：vendor 模块加载必需；多导出符号 ABI 安全（RESEARCH.md §5/§6）
           # CONFIG_MODULE_SCMVERSION is not set
           # CONFIG_TRIM_UNUSED_KSYMS is not set
