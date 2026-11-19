@@ -126,7 +126,7 @@ jobs:
           drivers/soc/oplus/power/subsys_sleep_monitor|vendor/oplus/kernel/power/subsys_sleep_monitor
           drivers/soc/oplus/power/cpufreq_effiency|vendor/oplus/kernel/power/cpufreq_effiency
           drivers/soc/oplus/power/cpufreq_health|vendor/oplus/kernel/power/cpufreq_health
-          drivers/soc/oplus/sensor|vendor/oplus/sensor/kernel
+          # v5: sensor 子树缺 MTK 专用头(mtk_nanohub.h 未公开)，本版跳过（后续按模块补）
           drivers/misc/oplus_procs_load|vendor/oplus/kernel/power/procs_load
           drivers/input/uff_fp_drivers|vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver
           drivers/input/oplus_fp_driver|vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/mtk
@@ -157,7 +157,7 @@ jobs:
           gen_glue drivers/soc/oplus/device_info "device_info tri_state_key"
           gen_glue drivers/soc/oplus/mdmrst "common"
           gen_glue drivers/soc/oplus/multimedia "feedback"
-          gen_glue drivers/soc/oplus/sensor "oplus_consumer_ir oplus_sensor_devinfo oplus_virtual_sensor pseudo-sensor qcom" 
+          # gen_glue sensor ... （v5 跳过）
 
           mkdir -p out
           # 2026-11-19 改用设备真实配置（RisingOS 9 运行中 /proc/config.gz 提取）：
