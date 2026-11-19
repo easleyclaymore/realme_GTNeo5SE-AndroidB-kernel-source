@@ -136,7 +136,11 @@ jobs:
             [ -n "$kdst" ] || continue
             if [ -d "/tmp/vsrc/$vsrcp" ]; then
               rm -rf "$kdst"
-              mkdir -p "$(dirname "$kdst")"
+              # 父目录若是同名文件/悬空 symlink（realme 树常见），先清掉
+              pd="$(dirname "$kdst")"
+              [ -e "$pd" ] && [ ! -d "$pd" ] && rm -f "$pd"
+              [ -L "$pd" ] && rm -f "$pd"
+              mkdir -p "$pd"
               cp -r "/tmp/vsrc/$vsrcp" "$kdst"
               echo "  集成 $kdst ← $vsrcp ($(find "$kdst" -type f | wc -l) 文件)"
             else
