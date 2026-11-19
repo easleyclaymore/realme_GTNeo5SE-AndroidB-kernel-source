@@ -70,7 +70,7 @@ jobs:
           echo "$HOME/clang/bin" >> "$GITHUB_PATH"
           df -h /
 
-      - name: 补桩 + 跑通 gki_defconfig
+      - name: 载入设备真实配置 + 补桩跑通 olddefconfig
         run: |
           set -e
           # realme 公开的树里 kernel/oplus_cpu、kernel/sched/walt/tuning 只是子模块占位
@@ -83,11 +83,14 @@ jobs:
           done
 
           mkdir -p out
+          # 2026-11-19 改用设备真实配置（RisingOS 9 运行中 /proc/config.gz 提取）：
+          # gki_defconfig 缺全部 oplus/qcom 设备内置功能（48MB vs 30.5MB）→ 上次 CI 内核无法开机
+          cp configs/rmx3700_stock.config out/.config
           attempt=0
           while : ; do
             attempt=$((attempt+1))
-            if make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 gki_defconfig > /tmp/defconfig.log 2>&1; then
-              echo "✅ defconfig 通过（第 $attempt 次尝试）"
+            if make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig > /tmp/defconfig.log 2>&1; then
+              echo "✅ olddefconfig 通过（第 $attempt 次尝试）"
               break
             fi
             miss=$(sed -n 's/.*can.t open file "\([^"]*\)".*/\1/p' /tmp/defconfig.log | head -1)
@@ -186,20 +189,17 @@ jobs:
       - name: 合并 fragment 并对齐版本串
         run: |
           set -e
-          case "${{ inputs.variant }}" in
-            gki)         VCONF=arch/arm64/configs/vendor/parrot_GKI.config ;;
-            consolidate) VCONF=arch/arm64/configs/vendor/parrot_consolidate.config ;;
-            *) echo "未知 variant"; exit 1 ;;
-          esac
-          echo "variant=${{ inputs.variant }} → $VCONF"
+          echo "基底 = 设备真实配置 configs/rmx3700_stock.config（不经 parrot 片段）"
           cp out/.config /tmp/base.config
           cat > /tmp/droidspaces-extra.fragment <<'FRAG'
           CONFIG_ANDROID_KABI_RESERVE=y
           CONFIG_POSIX_MQUEUE=y
+          # 关 SCM 门禁与符号裁剪：vendor 模块加载必需；多导出符号 ABI 安全（RESEARCH.md §5/§6）
+          # CONFIG_MODULE_SCMVERSION is not set
+          # CONFIG_TRIM_UNUSED_KSYMS is not set
           FRAG
           scripts/kconfig/merge_config.sh -m -O out \
             /tmp/base.config \
-            "$VCONF" \
             arch/arm64/configs/droidspaces.fragment \
             /tmp/droidspaces-extra.fragment
 
@@ -208,8 +208,8 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig
 
           echo "=== 关键项 ==="
-          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION|ANDROID_KABI_RESERVE|POSIX_MQUEUE|MODULES|NET)=" out/.config || true
-          grep -E "^# CONFIG_(LOCALVERSION_AUTO|CFS_BANDWIDTH|CGROUP_PIDS) " out/.config || true
+          grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION|ANDROID_KABI_RESERVE|MODULES|NET)=" out/.config || true
+          grep -E "^# CONFIG_(LOCALVERSION_AUTO|CFS_BANDWIDTH|CGROUP_PIDS|MODULE_SCMVERSION|TRIM_UNUSED_KSYMS) " out/.config || true
           cp out/.config /tmp/kernel.config
 
       - name: 编译 Image
@@ -221,6 +221,7 @@ jobs:
           # 显式把 LOCALVERSION 设为空即可抑制（空值同样算 "set"），且不影响版本串。
           export LOCALVERSION=
           make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
+          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) modules 2>&1 | tee /tmp/modules.log | tail -20
 
       - name: 检查产物
         run: |
@@ -247,7 +248,9 @@ jobs:
             out/arch/arm64/boot/Image
             /tmp/kernel.config
             out/System.map
-          if-no-files-found: error
+            out/drivers/net/macvlan.ko
+            out/drivers/net/ipvlan/ipvlan.ko
+          if-no-files-found: warn
           retention-days: 30
 
       - name: 失败时上传日志
