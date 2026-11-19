@@ -82,6 +82,52 @@ jobs:
             rm -rf "$p"
           done
 
+          # === v3: 集成 vendor-source 私有子树（2026-11-19）===
+          # v2 失败根因：28 个 oplus 私有子树被桩 → 内核缺 ~17MB 内置驱动
+          # → vendor 模块符号/CRC 对不上 → 早期崩溃。真源码在 vendor-source 仓库。
+          git clone --depth 1 https://github.com/realme-kernel-opensource/realme_GTNeo5SE-AndroidB-vendor-source /tmp/vsrc 2>/dev/null ||           git clone --depth 1 https://github.com/realme-kernel-opensource/realme_GTNeo5SE-AndroidB-vendor-source /tmp/vsrc
+          MAP='
+kernel/oplus_cpu/cpufreq_bouncing|vendor/oplus/kernel/cpu/cpufreq_bouncing
+kernel/oplus_cpu/cpufreq_effiency|vendor/oplus/kernel/cpu/cpufreq_effiency
+kernel/oplus_cpu/cpufreq_health|vendor/oplus/kernel/cpu/cpufreq_health
+kernel/oplus_cpu/oplus_omrg|vendor/oplus/kernel/cpu/oplus_omrg
+kernel/oplus_cpu/oplus_overload|vendor/oplus/kernel/cpu/oplus_overload
+kernel/oplus_cpu/sched|vendor/oplus/kernel/cpu/sched
+kernel/oplus_cpu/uad|vendor/oplus/kernel/cpu/uad
+mm/oplus_mm|vendor/oplus/kernel/mm
+drivers/input/touchscreen/oplus_touchscreen_v2|vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
+drivers/input/touchscreen/synaptics_hbp|vendor/oplus/kernel/touchpanel/synaptics_hbp
+drivers/base/kernelFwUpdate|vendor/oplus/kernel/touchpanel/kernelFwUpdate
+drivers/soc/oplus/boot|vendor/oplus/kernel/boot
+drivers/soc/oplus/device_info|vendor/oplus/kernel/device_info
+drivers/soc/oplus/dfr|vendor/oplus/kernel/dfr
+drivers/soc/oplus/dft|vendor/oplus/kernel/dft
+drivers/soc/oplus/mdmfeature|vendor/oplus/hardware/radio/kernel/mdmfeature
+drivers/soc/oplus/mdmrst|vendor/oplus/hardware/radio/mdmrst
+drivers/soc/oplus/multimedia|vendor/oplus/kernel/multimedia
+drivers/soc/oplus/oplus_consumer_ir|vendor/oplus/sensor/kernel/oplus_consumer_ir
+drivers/soc/oplus/storage|vendor/oplus/kernel/storage
+drivers/soc/oplus/power/midas|vendor/oplus/kernel/power/midas
+drivers/soc/oplus/power/subsys_sleep_monitor|vendor/oplus/kernel/power/subsys_sleep_monitor
+drivers/soc/oplus/power/cpufreq_effiency|vendor/oplus/kernel/power/cpufreq_effiency
+drivers/soc/oplus/power/cpufreq_health|vendor/oplus/kernel/power/cpufreq_health
+drivers/soc/oplus/sensor|vendor/oplus/sensor/kernel
+drivers/misc/oplus_procs_load|vendor/oplus/kernel/power/procs_load
+drivers/input/uff_fp_drivers|vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver
+drivers/input/oplus_fp_driver|vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/mtk
+'
+          echo "$MAP" | while IFS='|' read -r kdst vsrcp; do
+            [ -n "$kdst" ] || continue
+            if [ -d "/tmp/vsrc/$vsrcp" ]; then
+              rm -rf "$kdst"
+              mkdir -p "$(dirname "$kdst")"
+              cp -r "/tmp/vsrc/$vsrcp" "$kdst"
+              echo "  集成 $kdst ← $vsrcp ($(find "$kdst" -type f | wc -l) 文件)"
+            else
+              echo "  ⚠ vendor-source 无 $vsrcp（留待补桩）"
+            fi
+          done
+
           mkdir -p out
           # 2026-11-19 改用设备真实配置（RisingOS 9 运行中 /proc/config.gz 提取）：
           # gki_defconfig 缺全部 oplus/qcom 设备内置功能（48MB vs 30.5MB）→ 上次 CI 内核无法开机
@@ -123,8 +169,10 @@ jobs:
           # realme 公开树把 OPLUS 私有驱动做成指向 vendor/oplus/... 的 symlink，
           # 仓库不含 vendor/ → checkout 后全部悬空；drivers/soc/Makefile 里还有
           # 无条件 obj-y += oplus/storage/ 等，make 会去找并不存在的 Makefile。
-          echo "=== 注释 drivers/soc/Makefile 中的 oplus 私有子树引用 ==="
-          sed -i -E '/^[[:space:]]*(obj|subdir)-[^=]*[+]=.*oplus\// s|^|# vendor stub: |' drivers/soc/Makefile
+          echo "=== v3: drivers/soc/Makefile 的 oplus 行不再整体注释（真源码已集成）==="
+          # 仅注释指向仍缺失目录的行（目录存在且有 Makefile 则保留）
+          sed -i -E '/^[[:space:]]*(obj|subdir)-[^=]*[+]=.*oplus\// { \/storage\/|\/sensor\/|\/multimedia\/|\/boot\/|\/dfr\/|\/dft\/|\/device_info\/|\/mdmfeature\/|\/mdmrst\/|\/consumer_ir\/|\/midas\/|\/subsys_sleep_monitor\/|\/cpufreq_effiency\/|\/cpufreq_health\/|\/procs_load\/|\/oplus_touchscreen/! s|^|# vendor stub: | }' drivers/soc/Makefile 2>/dev/null || true
+          echo "（未命中的 oplus 行保留，由集成源码提供构建）"
           grep -n 'oplus/' drivers/soc/Makefile | head -20 || true
           echo "=== 通用兜底：被引用但缺 Makefile 的子目录建空桩 ==="
           find . -path ./out -prune -o -path ./.git -prune -o -name Makefile -type f -print > /tmp/mklist
