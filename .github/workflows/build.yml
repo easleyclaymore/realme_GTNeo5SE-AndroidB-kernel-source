@@ -166,7 +166,7 @@ jobs:
           attempt=0
           while : ; do
             attempt=$((attempt+1))
-            if make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig > /tmp/defconfig.log 2>&1; then
+            if make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig > /tmp/defconfig.log 2>&1; then
               echo "✅ olddefconfig 通过（第 $attempt 次尝试）"
               break
             fi
@@ -275,8 +275,7 @@ jobs:
           CONFIG_POSIX_MQUEUE=y
           # v4: LTO_CLANG_FULL + CFI —— stock 内核即此配置；CFI 是 ABI 级特性，
           # vendor 模块（带 CFI 编译）载入无 CFI 内核必挂。开启后与 stock ABI 对齐。
-          CONFIG_LTO=y
-          CONFIG_HAS_LTO_CLANG=y
+          CONFIG_LTO_CLANG=y
           CONFIG_LTO_CLANG_FULL=y
           CONFIG_CFI_CLANG=y
           CONFIG_CFI_CLANG_SHADOW=y
@@ -291,7 +290,18 @@ jobs:
 
           sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"|" out/.config
           scripts/config --file out/.config -d LOCALVERSION_AUTO 2>/dev/null || true
-          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 olddefconfig
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+
+          # v5: 强校验 LTO/CFI —— v4 缺 LLVM_IAS=1，HAS_LTO_CLANG 判负，
+          # LTO 静默回落 LTO_NONE，vendor 模块缺 __cfi_slowpath 必挂。
+          echo "=== 工具链 ==="
+          clang --version | head -1
+          command -v llvm-ar || { echo "MISSING llvm-ar"; exit 1; }
+          grep -q '^CONFIG_LTO_CLANG=y'        out/.config || { echo "FAIL LTO_CLANG"; grep -E "CONFIG_(LTO|CFI)" out/.config; exit 1; }
+          grep -q '^CONFIG_LTO_CLANG_FULL=y'   out/.config || { echo "FAIL LTO_CLANG_FULL"; exit 1; }
+          grep -q '^CONFIG_CFI_CLANG=y'        out/.config || { echo "FAIL CFI_CLANG"; exit 1; }
+          grep -q '^CONFIG_CFI_CLANG_SHADOW=y' out/.config || { echo "FAIL CFI_SHADOW"; exit 1; }
+          echo "OK LTO=FULL + CFI enabled"
 
           echo "=== 关键项 ==="
           grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION|ANDROID_KABI_RESERVE|MODULES|NET)=" out/.config || true
@@ -306,11 +316,11 @@ jobs:
           # vermagic 变成 "...g74d132f4467a+"，与 ROM 原版不一致会让 vendor .ko 拒载。
           # 显式把 LOCALVERSION 设为空即可抑制（空值同样算 "set"），且不影响版本串。
           export LOCALVERSION=
-          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
+          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
           echo "=== 构建错误汇总（若有）==="
           grep -nE "error:|undefined reference|undefined symbol|Error [0-9]" /tmp/build.log | head -80 || echo "（无 error 行——检查是否 LTO 链接失败）"
           grep -cE "\.c:" /tmp/build.log || true
-          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) modules 2>&1 | tee /tmp/modules.log | tail -20
+          make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j$(nproc) modules 2>&1 | tee /tmp/modules.log | tail -20
 
       - name: 检查产物
         run: |
