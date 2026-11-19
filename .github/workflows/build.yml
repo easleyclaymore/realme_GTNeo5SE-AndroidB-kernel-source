@@ -307,6 +307,9 @@ jobs:
           # 显式把 LOCALVERSION 设为空即可抑制（空值同样算 "set"），且不影响版本串。
           export LOCALVERSION=
           make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) Image 2>&1 | tee /tmp/build.log | tail -60
+          echo "=== 构建错误汇总（若有）==="
+          grep -nE "error:|undefined reference|undefined symbol|Error [0-9]" /tmp/build.log | head -80 || echo "（无 error 行——检查是否 LTO 链接失败）"
+          grep -cE "\.c:" /tmp/build.log || true
           make -k O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 -j$(nproc) modules 2>&1 | tee /tmp/modules.log | tail -20
 
       - name: 检查产物
