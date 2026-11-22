@@ -29,13 +29,12 @@ jobs:
           sudo apt-get clean
           df -h /
 
-      - name: 增加 swap（LTO 链接吃内存，7GB runner 兜底）
+      - name: 检查内存与 swap
         run: |
-          sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # GitHub runner 镜像自带 /swapfile 且已 swapon，重复创建会 Text file busy。
+          # 这里只做诊断；LTO 内存问题靠 THIN LTO + 关 DEBUG_INFO 解决。
           free -h
+          swapon --show || true
           df -h /
 
       - name: 检出源码
