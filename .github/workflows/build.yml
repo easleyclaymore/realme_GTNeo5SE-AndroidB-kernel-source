@@ -29,6 +29,15 @@ jobs:
           sudo apt-get clean
           df -h /
 
+      - name: 增加 swap（LTO 链接吃内存，7GB runner 兜底）
+        run: |
+          sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+          df -h /
+
       - name: 检出源码
         uses: actions/checkout@v4
         with:
@@ -276,9 +285,13 @@ jobs:
           # v4: LTO_CLANG_FULL + CFI —— stock 内核即此配置；CFI 是 ABI 级特性，
           # vendor 模块（带 CFI 编译）载入无 CFI 内核必挂。开启后与 stock ABI 对齐。
           CONFIG_LTO_CLANG=y
-          CONFIG_LTO_CLANG_FULL=y
+          CONFIG_LTO_CLANG_THIN=y
+          # CONFIG_LTO_CLANG_FULL is not set
           CONFIG_CFI_CLANG=y
           CONFIG_CFI_CLANG_SHADOW=y
+          # v6: 关掉调试信息（stock 是 DEBUG_INFO+DEBUG_INFO_DWARF4）——
+          # 不影响 ABI/CRC/CFI，但能让 LTO 链接的内存占用从十几 GB 降到可跑完
+          CONFIG_DEBUG_INFO_NONE=y
           # 关 SCM 门禁与符号裁剪：vendor 模块加载必需；多导出符号 ABI 安全（RESEARCH.md §5/§6）
           # CONFIG_MODULE_SCMVERSION is not set
           # CONFIG_TRIM_UNUSED_KSYMS is not set
@@ -298,10 +311,10 @@ jobs:
           clang --version | head -1
           command -v llvm-ar || { echo "MISSING llvm-ar"; exit 1; }
           grep -q '^CONFIG_LTO_CLANG=y'        out/.config || { echo "FAIL LTO_CLANG"; grep -E "CONFIG_(LTO|CFI)" out/.config; exit 1; }
-          grep -q '^CONFIG_LTO_CLANG_FULL=y'   out/.config || { echo "FAIL LTO_CLANG_FULL"; exit 1; }
+          grep -q '^CONFIG_LTO_CLANG_THIN=y'   out/.config || { echo "FAIL LTO_CLANG_THIN"; exit 1; }
           grep -q '^CONFIG_CFI_CLANG=y'        out/.config || { echo "FAIL CFI_CLANG"; exit 1; }
           grep -q '^CONFIG_CFI_CLANG_SHADOW=y' out/.config || { echo "FAIL CFI_SHADOW"; exit 1; }
-          echo "OK LTO=FULL + CFI enabled"
+          echo "OK LTO=THIN + CFI enabled"
 
           echo "=== 关键项 ==="
           grep -E "^CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|DEVTMPFS_MOUNT|USER_NS|MODVERSIONS|LOCALVERSION|ANDROID_KABI_RESERVE|MODULES|NET)=" out/.config || true
