@@ -249,6 +249,7 @@ jobs:
           grep -n 'mmget_still_valid' drivers/android/binder_alloc.c || echo "  binder: 已恢复上游 5.10 逻辑"
 
       - name: 应用 kABI 补丁并提交
+        if: ${{ inputs.variant != 'baseline' }}
         run: |
           set -e
           B=https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12
@@ -278,27 +279,33 @@ jobs:
           set -e
           echo "基底 = 设备真实配置 configs/rmx3700_stock.config（不经 parrot 片段）"
           cp out/.config /tmp/base.config
-          cat > /tmp/droidspaces-extra.fragment <<'FRAG'
-          CONFIG_ANDROID_KABI_RESERVE=y
-          CONFIG_POSIX_MQUEUE=y
-          # v4: LTO_CLANG_FULL + CFI —— stock 内核即此配置；CFI 是 ABI 级特性，
-          # vendor 模块（带 CFI 编译）载入无 CFI 内核必挂。开启后与 stock ABI 对齐。
+          # LTO/CFI 对齐用（baseline 与正式版都需要）
+          cat > /tmp/lto.fragment <<'FRAG'
           CONFIG_LTO_CLANG=y
           CONFIG_LTO_CLANG_THIN=y
           # CONFIG_LTO_CLANG_FULL is not set
           CONFIG_CFI_CLANG=y
           CONFIG_CFI_CLANG_SHADOW=y
-          # v6: 关掉调试信息（stock 是 DEBUG_INFO+DEBUG_INFO_DWARF4）——
-          # 不影响 ABI/CRC/CFI，但能让 LTO 链接的内存占用从十几 GB 降到可跑完
-          CONFIG_DEBUG_INFO_NONE=y
-          # 关 SCM 门禁与符号裁剪：vendor 模块加载必需；多导出符号 ABI 安全（RESEARCH.md §5/§6）
+          # 关 SCM 门禁与符号裁剪：vendor 模块加载必需
           # CONFIG_MODULE_SCMVERSION is not set
           # CONFIG_TRIM_UNUSED_KSYMS is not set
           FRAG
-          scripts/kconfig/merge_config.sh -m -O out \
-            /tmp/base.config \
-            arch/arm64/configs/droidspaces.fragment \
-            /tmp/droidspaces-extra.fragment
+          # Droidspaces 专用选项（baseline 不加）
+          cat > /tmp/ds-extra.fragment <<'FRAG'
+          CONFIG_ANDROID_KABI_RESERVE=y
+          CONFIG_POSIX_MQUEUE=y
+          FRAG
+
+          if [ "${{ inputs.variant }}" = "baseline" ]; then
+            echo "=== baseline：纯 stock 配置 + 仅 LTO/CFI 对齐（无 SYSVIPC、无 kABI 补丁）==="
+            scripts/kconfig/merge_config.sh -m -O out /tmp/base.config /tmp/lto.fragment
+          else
+            scripts/kconfig/merge_config.sh -m -O out \
+              /tmp/base.config \
+              arch/arm64/configs/droidspaces.fragment \
+              /tmp/lto.fragment \
+              /tmp/ds-extra.fragment
+          fi
 
           sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"|" out/.config
           scripts/config --file out/.config -d LOCALVERSION_AUTO 2>/dev/null || true
@@ -361,6 +368,8 @@ jobs:
             out/System.map
             out/drivers/net/macvlan.ko
             out/drivers/net/ipvlan/ipvlan.ko
+            out/Module.symvers
+            out/.config
           if-no-files-found: warn
           retention-days: 30
 
