@@ -247,6 +247,10 @@ jobs:
           # 删掉这 5 行；err_no_vma / free_range 标签在别处仍有 goto 引用。
           sed -i '/if (!mmget_still_valid(mm)) {/,+4d' drivers/android/binder_alloc.c
           grep -n 'mmget_still_valid' drivers/android/binder_alloc.c || echo "  binder: 已恢复上游 5.10 逻辑"
+          # 与 kABI 步骤无关的语法笔误修正：shrink_lruvec() 声明 proportional_reclaim
+          # 却使用 scan_adjusted（baseline 不跑 kABI 步骤也必须修）
+          sed -i 's/bool proportional_reclaim;/bool scan_adjusted;/' mm/vmscan.c
+          grep -n 'bool scan_adjusted' mm/vmscan.c
 
       - name: 应用 kABI 补丁并提交
         if: ${{ inputs.variant != 'baseline' }}
